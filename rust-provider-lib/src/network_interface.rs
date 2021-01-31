@@ -2,29 +2,25 @@ use tokio::sync::mpsc;
 use tonic::Request;
 use futures::executor::block_on;
 
-use echo_pb::echo_client::EchoClient;
-use echo_pb::EchoRequest;
-
-pub mod echo_pb {
-    tonic::include_proto!("echo");
-}
+use crate::core_pb::game_core_client::GameCoreClient;
+use crate::core_pb::ProviderMsg;
 
 pub trait NetworkInterface {
     fn connect(&mut self);
 
     fn is_connected(&self) -> bool;
 
-    fn recv(&mut self) -> String;
+    fn recv(&mut self) -> ProviderMsg;
 
-    fn send(&mut self, msg: String);
+    fn send(&mut self, msg: ProviderMsg);
 
     fn stop(&mut self);
 }
 
 
 pub struct GrpcNetworkInterface {
-    inbound: Option<tonic::Streaming<echo_pb::EchoResponse>>,
-    sender: Option<mpsc::Sender<String>>
+    inbound: Option<tonic::Streaming<ProviderMsg>>,
+    sender: Option<mpsc::Sender<ProviderMsg>>
 }
 
 impl GrpcNetworkInterface {
@@ -39,19 +35,16 @@ impl GrpcNetworkInterface {
 impl NetworkInterface for GrpcNetworkInterface {
     fn connect(&mut self) {
         let future = async {
-            let mut client = EchoClient::connect("http://localhost:5678").await.unwrap();
+            let mut client = GameCoreClient::connect("http://localhost:50051").await.unwrap();
             let (tx, mut rx) = mpsc::channel(4);
 
             let outbound = async_stream::stream! {
                 while let Some(message) = rx.recv().await {
-                    let req = EchoRequest {
-                        message
-                    };
-                    yield req;
+                    yield message;
                 }
             };
         
-            let response = client.bidirectional_streaming_echo(Request::new(outbound)).await.unwrap();
+            let response = client.provider(Request::new(outbound)).await.unwrap();
             self.inbound = Some(response.into_inner());
             self.sender = Some(tx);
         };
@@ -59,20 +52,19 @@ impl NetworkInterface for GrpcNetworkInterface {
     }
 
     fn is_connected(&self) -> bool {
-        true
+        assert_eq!(self.inbound.is_some(), self.sender.is_some());
+        self.inbound.is_some() && self.sender.is_some()
     }
 
-    fn recv(&mut self) -> String { 
+    fn recv(&mut self) -> ProviderMsg { 
         let future = self.inbound.as_mut().unwrap().message();
         let resp = block_on(future);
-        if let Some(resp) = resp.unwrap() {
-            println!("msg received: {:?}", resp);
-            return resp.message;
-        }
-        String::new() 
+        let msg = resp.unwrap().unwrap();
+        println!("msg received: {:?}", msg);
+        msg
     }
 
-    fn send(&mut self, msg: String) {
+    fn send(&mut self, msg: ProviderMsg) {
         let future = self.sender.as_ref().unwrap().send(msg);
         let result = block_on(future);
         result.unwrap();

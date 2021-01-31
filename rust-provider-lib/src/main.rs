@@ -1,6 +1,7 @@
 use rust_provider_lib::game_manager::*;
 use rust_provider_lib::state_machine::*;
 use rust_provider_lib::network_interface::*;
+use rust_provider_lib::core_pb::ProviderMsg;
 
 struct MyStateMachine;
 
@@ -11,8 +12,8 @@ impl MyStateMachine {
 }
 
 impl StateMachine for MyStateMachine {
-    fn transition(&mut self, msg: String) -> String {
-        String::new()
+    fn transition(&mut self, msg: ProviderMsg) -> Vec<ProviderMsg> {
+        vec![]
     }
 }
 
