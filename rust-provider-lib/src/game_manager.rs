@@ -1,6 +1,6 @@
 use crate::network_interface::NetworkInterface;
 use crate::state_machine::StateMachine;
-use crate::core_pb::{provider_msg, ProviderMsg, RegisterArgs};
+use crate::core_pb::{ProviderMsg, RegisterArgs};
 
 pub struct GameManager {
     network_interface: Box<dyn NetworkInterface>,
@@ -15,23 +15,10 @@ impl GameManager {
         GameManager{ network_interface, state_machine }
     }
 
-    // for test
-    pub fn start(&mut self) {
-        self.network_interface.connect();
-        // self.network_interface.send(String::from("hello"));
-        loop {
-            let msg_recv = self.network_interface.recv();
-            self.handle_message(msg_recv);
-        }
-    }
-
-    // for production
     pub fn start_with_register_args(&mut self, msg: RegisterArgs) {
-        self.network_interface.connect();
-        self.network_interface.send(ProviderMsg {
-            sequence_id: 0,
-            msg: Some(provider_msg::Msg::RegisterArgs(msg))
-        });
+        self.network_interface.connect_with_register_args(msg);
+        assert!(self.network_interface.is_connected());
+        println!("Connected successfully.");
         loop {
             let msg_recv = self.network_interface.recv();
             self.handle_message(msg_recv);
@@ -45,5 +32,5 @@ impl GameManager {
         }
     }
 
-    fn stop() {}
+    fn _stop() {}
 }

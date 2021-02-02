@@ -3,10 +3,10 @@ use tonic::Request;
 use futures::executor::block_on;
 
 use crate::core_pb::game_core_client::GameCoreClient;
-use crate::core_pb::ProviderMsg;
+use crate::core_pb::{ProviderMsg, RegisterArgs, provider_msg::Msg};
 
 pub trait NetworkInterface {
-    fn connect(&mut self);
+    fn connect_with_register_args(&mut self, msg: RegisterArgs);
 
     fn is_connected(&self) -> bool;
 
@@ -16,7 +16,6 @@ pub trait NetworkInterface {
 
     fn stop(&mut self);
 }
-
 
 pub struct GrpcNetworkInterface {
     inbound: Option<tonic::Streaming<ProviderMsg>>,
@@ -33,20 +32,27 @@ impl GrpcNetworkInterface {
 }
 
 impl NetworkInterface for GrpcNetworkInterface {
-    fn connect(&mut self) {
+    fn connect_with_register_args(&mut self, msg: RegisterArgs) {
+        let (tx, mut rx) = mpsc::channel(4);
+        self.sender = Some(tx);
+        
+        let outbound = async_stream::stream! {
+            yield ProviderMsg {
+                sequence_id: 0,
+                msg: Some(Msg::RegisterArgs(msg))
+            };
+            while let Some(message) = rx.recv().await {
+                println!("msg will be sent: {:?}", message);
+                yield message;
+            }
+        };
+
         let future = async {
             let mut client = GameCoreClient::connect("http://localhost:50051").await.unwrap();
-            let (tx, mut rx) = mpsc::channel(4);
-
-            let outbound = async_stream::stream! {
-                while let Some(message) = rx.recv().await {
-                    yield message;
-                }
-            };
         
+            // will block until yield in stream! (i.e. the first msg sent out)
             let response = client.provider(Request::new(outbound)).await.unwrap();
             self.inbound = Some(response.into_inner());
-            self.sender = Some(tx);
         };
         block_on(future);
     }
@@ -60,6 +66,7 @@ impl NetworkInterface for GrpcNetworkInterface {
         let future = self.inbound.as_mut().unwrap().message();
         let resp = block_on(future);
         let msg = resp.unwrap().unwrap();
+        // Any { type_url: "type.googleapis.com/Uno.StartGameSettings", value: [8, 1, 16, 1, 40, 15] }
         println!("msg received: {:?}", msg);
         msg
     }
