@@ -28,10 +28,8 @@ impl StateMachine for UnoStateMachine {
 
         let mut msgs = vec![];
         for (userid, init_handcards) in userid_to_init_handcards.iter() {
-            msgs.push(pmb::notify_msg_args(
-                0, ErrorNumber::Ok, msg.room_id, userid.clone() as i32, 
-                mb::game_start(
-                    init_handcards.clone(), flipped_card.clone(), first_player)));
+            msgs.push(mb::notify_msg_args(msg.room_id, userid.clone() as i32, 
+                mb::game_start(init_handcards.clone(), flipped_card.clone(), first_player)));
         }
         msgs
     }
@@ -70,10 +68,8 @@ impl UnoStateMachine {
         game_state.userid_to_player_state.get_mut(&userid).unwrap().handcards_num += msg.number;
 
         let mut msgs = vec![];
-        msgs.push(pmb::notify_msg_args(
-            0, ErrorNumber::Ok, roomid, 0, mb::draw(msg.number)));
-        msgs.push(pmb::notify_msg_args(
-            0, ErrorNumber::Ok, roomid, userid as i32, mb::draw_rsp(cards)));
+        msgs.push(mb::notify_msg_args(roomid, 0, mb::draw(msg.number)));
+        msgs.push(mb::notify_msg_args(roomid, userid as i32, mb::draw_rsp(cards)));
         msgs
     }
 
@@ -82,8 +78,7 @@ impl UnoStateMachine {
         let _userid = self.state.cur_userid as u32;
 
         let mut msgs = vec![];
-        msgs.push(pmb::notify_msg_args(
-            0, ErrorNumber::Ok, roomid, 0, mb::skip()));
+        msgs.push(mb::notify_msg_args(roomid, 0, mb::skip()));
         msgs
     }
 
@@ -96,8 +91,7 @@ impl UnoStateMachine {
         game_state.userid_to_player_state.get_mut(&userid).unwrap().handcards_num -= 1;
 
         let mut msgs = vec![];
-        msgs.push(pmb::notify_msg_args(
-            0, ErrorNumber::Ok, roomid, 0, mb::play(msg.card.unwrap(), msg.next_color)));
+        msgs.push(mb::notify_msg_args(roomid, 0, mb::play(msg.card.unwrap(), msg.next_color)));
 
         if game_state.userid_to_player_state.get_mut(&userid).unwrap().handcards_num == 0 {
             msgs.push(pmb::close_game_args(0, roomid));
