@@ -5,11 +5,10 @@ use rust_provider_lib::core_pb::{
 };
 use rust_provider_lib::util;
 use crate::splendor_pb::{UserOperation, StartGameSettings, Take, Purchase, Reserve,
-    user_operation::Operation, ResourceType, ResourceMap
+    user_operation::Operation, ResourceType
 };
 use crate::state::{GlobalState};
 use crate::msg_builder as mb;
-use rust_provider_lib::msg_builder as pmb;
 
 pub struct SplendorStateMachine {
     state: GlobalState
@@ -246,5 +245,91 @@ mod tests {
                 check_resource(&resources, 0, 0, 0, 0, 0, 0);
             }
         }
+    }
+
+    #[test]
+    fn purchase_from_board() {
+        let mut sm = setup();
+        let dev_card = sm.state.roomid_to_game_state.get(&1).unwrap()
+            .board_state.dev_cards[0].cards_on_board[2].clone();
+        for entry in dev_card.price.as_ref().unwrap().entries.iter() {
+            let game_state = sm.state.roomid_to_game_state.get_mut(&1).unwrap();
+            let idx = entry.resource_type as usize;
+            game_state.board_state.resources_on_board.entries[idx].number -= entry.number;
+            game_state.userid_to_player_state.get_mut(&1).unwrap()
+                .resource.entries[idx].number += entry.number;
+        }
+        sm.transition_purchase(mb::purchase(0, 2));
+
+        let game_state = sm.state.roomid_to_game_state.get(&1).unwrap();
+        let board_state = &game_state.board_state;
+        let player_state = game_state.userid_to_player_state.get(&1).unwrap();
+        check_resource(&board_state.resources_on_board, 7, 7, 7, 7, 7, 5);
+        check_resource(&player_state.resource, 0, 0, 0, 0, 0, 0);
+        assert_eq!(player_state.dev_cards.len(), 1 as usize);
+        assert_eq!(*player_state.dev_cards.get(0).unwrap(), dev_card);
+    }
+
+    #[test]
+    fn purchase_from_reserved() {
+        let mut sm = setup();
+        let dev_card = sm.state.roomid_to_game_state.get(&1).unwrap()
+            .board_state.dev_cards[1].cards_on_board[3].clone();
+        sm.transition_reserve(mb::reserve(1, 3));
+        for entry in dev_card.price.as_ref().unwrap().entries.iter() {
+            let game_state = sm.state.roomid_to_game_state.get_mut(&1).unwrap();
+            let idx = entry.resource_type as usize;
+            game_state.board_state.resources_on_board.entries[idx].number -= entry.number;
+            game_state.userid_to_player_state.get_mut(&1).unwrap()
+                .resource.entries[idx].number += entry.number;
+        }
+        sm.transition_purchase(mb::purchase(-1, 0));
+
+        let game_state = sm.state.roomid_to_game_state.get(&1).unwrap();
+        let board_state = &game_state.board_state;
+        let player_state = game_state.userid_to_player_state.get(&1).unwrap();
+        check_resource(&board_state.resources_on_board, 7, 7, 7, 7, 7, 4);
+        check_resource(&player_state.resource, 0, 0, 0, 0, 0, 1);
+        assert_eq!(player_state.dev_cards.len(), 1 as usize);
+        assert_eq!(*player_state.dev_cards.get(0).unwrap(), dev_card);
+        assert!(player_state.reserved_cards.is_empty());
+    }
+
+    #[test]
+    fn reserve_from_board() {
+        let mut sm = setup();
+        let dev_card = sm.state.roomid_to_game_state.get(&1).unwrap()
+            .board_state.dev_cards[0].cards_on_board[1].clone();
+        sm.transition_reserve(mb::reserve(0, 1));
+
+        let game_state = sm.state.roomid_to_game_state.get(&1).unwrap();
+        let board_state = &game_state.board_state;
+        let player_state = game_state.userid_to_player_state.get(&1).unwrap();
+
+        assert_eq!(board_state.dev_cards[0].deck.len(), 35);
+        assert_eq!(board_state.dev_cards[0].cards_on_board.len(), 4);
+        assert_eq!(player_state.reserved_cards.len(), 1);
+        assert_eq!(*player_state.reserved_cards.get(0).unwrap(), dev_card);
+        check_resource(&board_state.resources_on_board, 7, 7, 7, 7, 7, 4);
+        check_resource(&player_state.resource, 0, 0, 0, 0, 0, 1);
+    }
+
+    #[test]
+    fn reserve_from_deck() {
+        let mut sm = setup();
+        let dev_card = sm.state.roomid_to_game_state.get(&1).unwrap()
+            .board_state.dev_cards[0].deck.get(35).unwrap().clone();
+        sm.transition_reserve(mb::reserve(0, -1));
+
+        let game_state = sm.state.roomid_to_game_state.get(&1).unwrap();
+        let board_state = &game_state.board_state;
+        let player_state = game_state.userid_to_player_state.get(&1).unwrap();
+
+        assert_eq!(board_state.dev_cards[0].deck.len(), 35);
+        assert_eq!(board_state.dev_cards[0].cards_on_board.len(), 4);
+        assert_eq!(player_state.reserved_cards.len(), 1);
+        assert_eq!(*player_state.reserved_cards.get(0).unwrap(), dev_card);
+        check_resource(&board_state.resources_on_board, 7, 7, 7, 7, 7, 4);
+        check_resource(&player_state.resource, 0, 0, 0, 0, 0, 1);
     }
 }

@@ -19,7 +19,3 @@ rand = "0.8.3"
 
 [build-dependencies]
 tonic-build = { version = "0.4", features = ["prost"] }
-
-[profile.dev]
-opt-level = 0  # Controls the --opt-level the compiler builds with
-debug = true   # Controls whether the compiler passes `-g`

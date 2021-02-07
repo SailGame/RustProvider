@@ -4,7 +4,6 @@ use crate::splendor_pb::{
     StartGameSettings, Development, ResourceMap, ResourceEntry, ResourceType, 
     Noble, GameStart, DevelopmentLevelState
 };
-use crate::msg_builder as mb;
 use rand::prelude::*;
 
 pub struct GlobalState {
@@ -189,8 +188,8 @@ impl DevCardsLevelState {
             self.cards_on_board.remove(index as usize)
         }
         else {
-            let old = self.deck.pop().unwrap();
-            self.cards_on_board[index as usize] = old.clone();
+            let old = self.cards_on_board[index as usize].clone();
+            self.cards_on_board[index as usize] = self.deck.pop().unwrap();
             old
         }
     }
