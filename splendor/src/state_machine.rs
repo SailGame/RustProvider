@@ -5,7 +5,7 @@ use rust_provider_lib::core_pb::{
 };
 use rust_provider_lib::util;
 use crate::splendor_pb::{UserOperation, StartGameSettings, Take, Purchase, Reserve,
-    user_operation::Operation, ResourceType
+    user_operation::Operation, ResourceType, ResourceMap
 };
 use crate::state::{GlobalState};
 use crate::msg_builder as mb;
@@ -25,8 +25,7 @@ impl StateMachine for SplendorStateMachine {
         let game_settings = util::unpack::<StartGameSettings>(msg.custom.unwrap());
         let game_start = self.state.new_game(msg.room_id, msg.user_id, game_settings);
 
-        vec![pmb::notify_msg_args(
-            0, ErrorNumber::Ok, msg.room_id, 0, mb::game_start(game_start))]
+        vec![mb::notify_msg_args(msg.room_id, 0, mb::game_start(game_start))]
     }
 
     fn transition_query_state_args(&mut self, _msg: QueryStateArgs) -> Vec<ProviderMsg> {
@@ -55,8 +54,7 @@ impl SplendorStateMachine {
         let roomid = self.state.cur_roomid;
         let userid = self.state.cur_userid as u32;
         // broadcast the user operation to all other players
-        msgs.push(pmb::notify_msg_args(
-            0, ErrorNumber::Ok, roomid, -(userid as i32), mb::user_op(msg)));
+        msgs.push(mb::notify_msg_args(roomid, -(userid as i32), mb::user_op(msg)));
         msgs
     }
 
@@ -73,8 +71,7 @@ impl SplendorStateMachine {
             player_state.take_resource(*resource_type);
         }
 
-        vec![pmb::notify_msg_args(
-            0, ErrorNumber::Ok, roomid, 0, mb::game_state(game_state.get_pub_state()))]
+        vec![mb::notify_msg_args(roomid, 0, mb::game_state(game_state.get_pub_state()))]
     }
 
     fn transition_purchase(&mut self, msg: Purchase) -> Vec<ProviderMsg> {
@@ -122,8 +119,7 @@ impl SplendorStateMachine {
             player_state.points += noble.points;
         }
 
-        vec![pmb::notify_msg_args(
-            0, ErrorNumber::Ok, roomid, 0, mb::game_state(game_state.get_pub_state()))]
+        vec![mb::notify_msg_args(roomid, 0, mb::game_state(game_state.get_pub_state()))]
     }
 
     fn transition_reserve(&mut self, msg: Reserve) -> Vec<ProviderMsg> {
@@ -145,8 +141,7 @@ impl SplendorStateMachine {
             assert!(!board_state.dev_cards[msg.development_level as usize].deck.is_empty());
             let card = board_state.dev_cards[msg.development_level as usize].deck.pop().unwrap();
             // need to tell only that player what the dev card is
-            msgs.push(pmb::notify_msg_args(
-                0, ErrorNumber::Ok, roomid, userid as i32, mb::reserve_rsp(card.clone())));
+            msgs.push(mb::notify_msg_args(roomid, userid as i32, mb::reserve_rsp(card.clone())));
             card
         };
         player_state.reserved_cards.push(dev_card);
@@ -157,8 +152,99 @@ impl SplendorStateMachine {
             player_state.take_resource(ResourceType::Gold as i32);
         }
 
-        msgs.push(pmb::notify_msg_args(
-            0, ErrorNumber::Ok, roomid, 0, mb::game_state(game_state.get_pub_state())));
+        msgs.push(mb::notify_msg_args(roomid, 0, mb::game_state(game_state.get_pub_state())));
         msgs
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn setup() -> SplendorStateMachine {
+        let mut sm = SplendorStateMachine::new();
+        sm.transition_start_game_args(mb::start_game_args(
+            1, vec![1, 2, 3], StartGameSettings { round_time: 15 }));
+        sm.state.cur_roomid = 1;
+        sm.state.cur_userid = 1;
+        sm
+    }
+
+    fn check_resource(
+        resources: &ResourceMap,
+        agate: i32, emerald: i32, diamond: i32, ruby: i32, sapphire: i32, gold: i32
+    ) {
+        assert_eq!(resources.entries[ResourceType::Agate as usize].number, agate);
+        assert_eq!(resources.entries[ResourceType::Emerald as usize].number, emerald);
+        assert_eq!(resources.entries[ResourceType::Diamond as usize].number, diamond);
+        assert_eq!(resources.entries[ResourceType::Ruby as usize].number, ruby);
+        assert_eq!(resources.entries[ResourceType::Sapphire as usize].number, sapphire);
+        assert_eq!(resources.entries[ResourceType::Gold as usize].number, gold);
+    }
+
+    #[test]
+    fn take_three_kinds() {
+        let mut sm = setup();
+        sm.transition_take(mb::take(vec![
+            ResourceType::Agate as i32,
+            ResourceType::Diamond as i32,
+            ResourceType::Sapphire as i32
+        ]));
+        let game_state = sm.state.roomid_to_game_state.get(&1).unwrap();
+        let board_resources = &game_state.board_state.resources_on_board;
+        check_resource(&board_resources, 6, 7, 6, 7, 6, 5);
+
+        for player in 1..3 {
+            let resources = &game_state.userid_to_player_state.get(&player).unwrap().resource;
+            if player == 1 {
+                check_resource(&resources, 1, 0, 1, 0, 1, 0);
+            }
+            else {
+                check_resource(&resources, 0, 0, 0, 0, 0, 0);
+            }
+        }
+    }
+
+    #[test]
+    fn take_two_kinds() {
+        let mut sm = setup();
+        sm.transition_take(mb::take(vec![
+            ResourceType::Emerald as i32,
+            ResourceType::Ruby as i32,
+        ]));
+        let game_state = sm.state.roomid_to_game_state.get(&1).unwrap();
+        let board_resources = &game_state.board_state.resources_on_board;
+        check_resource(&board_resources, 7, 6, 7, 6, 7, 5);
+
+        for player in 1..3 {
+            let resources = &game_state.userid_to_player_state.get(&player).unwrap().resource;
+            if player == 1 {
+                check_resource(&resources, 0, 1, 0, 1, 0, 0);
+            }
+            else {
+                check_resource(&resources, 0, 0, 0, 0, 0, 0);
+            }
+        }
+    }
+
+    #[test]
+    fn take_one_kind() {
+        let mut sm = setup();
+        sm.transition_take(mb::take(vec![
+            ResourceType::Diamond as i32,
+            ResourceType::Diamond as i32,
+        ]));
+        let game_state = sm.state.roomid_to_game_state.get(&1).unwrap();
+        let board_resources = &game_state.board_state.resources_on_board;
+        check_resource(&board_resources, 7, 7, 5, 7, 7, 5);
+
+        for player in 1..3 {
+            let resources = &game_state.userid_to_player_state.get(&player).unwrap().resource;
+            if player == 1 {
+                check_resource(&resources, 0, 0, 2, 0, 0, 0);
+            }
+            else {
+                check_resource(&resources, 0, 0, 0, 0, 0, 0);
+            }
+        }
     }
 }

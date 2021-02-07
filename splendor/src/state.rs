@@ -4,6 +4,7 @@ use crate::splendor_pb::{
     StartGameSettings, Development, ResourceMap, ResourceEntry, ResourceType, 
     Noble, GameStart, DevelopmentLevelState
 };
+use crate::msg_builder as mb;
 use rand::prelude::*;
 
 pub struct GlobalState {
@@ -43,7 +44,7 @@ impl GameState {
     ) -> GameState {
         let mut userid_to_player_state = HashMap::new();
         for userid in userids.iter() {
-            userid_to_player_state.insert(userid.clone(), PlayerState::new());
+            userid_to_player_state.insert(*userid, PlayerState::new());
         }
 
         GameState {
@@ -241,10 +242,11 @@ impl PlayerState {
 }
 
 fn get_multi_rand_nums(num: usize, min: i32, max: i32) -> Vec<i32> {
-    let mut nums: Vec<i32> = (min..max).collect();
+    let mut nums: Vec<i32> = (min..max + 1).collect();
     let mut rng = rand::thread_rng();
     nums.shuffle(&mut rng);
-    nums.split_off(num)
+    let _ = nums.split_off(num);
+    nums
 }
 
 fn get_a_rand_noble(rands: Vec<i32>, numbers: Vec<i32>) -> Noble {
@@ -299,6 +301,62 @@ fn get_default_resource_map() -> ResourceMap {
             ResourceEntry { resource_type: ResourceType::Diamond as i32, number: 0 },
             ResourceEntry { resource_type: ResourceType::Ruby as i32, number: 0 },
             ResourceEntry { resource_type: ResourceType::Sapphire as i32, number: 0 },
+            ResourceEntry { resource_type: ResourceType::Gold as i32, number: 0 },
         ]
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_global_state_new() {
+        let global_state = GlobalState::new();
+        assert!(global_state.roomid_to_game_state.is_empty());
+        assert_eq!(global_state.cur_roomid, -1);
+        assert_eq!(global_state.cur_userid, -1);
+    }
+
+    #[test]
+    fn test_game_state_new() {
+        let game_state = GameState::new(vec![1, 2, 3], mb::game_settings(15));
+        assert_eq!(game_state.player_num, 3);
+        assert_eq!(game_state.game_settings, mb::game_settings(15));
+
+        let board_state = &game_state.board_state;
+        let dev_cards = &board_state.dev_cards;
+        assert_eq!(dev_cards.len(), 3);
+        assert_eq!(dev_cards[0].deck.len(), 36);
+        assert_eq!(dev_cards[0].cards_on_board.len(), 4);
+        assert_eq!(dev_cards[1].deck.len(), 26);
+        assert_eq!(dev_cards[1].cards_on_board.len(), 4);
+        assert_eq!(dev_cards[2].deck.len(), 16);
+        assert_eq!(dev_cards[2].cards_on_board.len(), 4);
+
+        let resources = &board_state.resources_on_board.entries;
+        assert_eq!(resources.len(), 6);
+        for i in 0..5 {
+            assert_eq!(resources[i].resource_type, i as i32);
+            assert_eq!(resources[i].number, 7);
+        }
+        assert_eq!(resources[5].resource_type, ResourceType::Gold as i32);
+        assert_eq!(resources[5].number, 5);
+
+        assert_eq!(board_state.nobles_on_board.len(), 5);
+
+        assert_eq!(game_state.userid_to_player_state.len(), 3);
+        for player_state in game_state.userid_to_player_state.values() {
+            assert!(player_state.dev_cards.is_empty());
+            assert!(player_state.nobles.is_empty());
+            assert!(player_state.reserved_cards.is_empty());
+            assert_eq!(player_state.points, 0);
+            let resources = &player_state.resource.entries;
+            assert_eq!(resources.len(), 6);
+            for (i, resource) in resources.iter().enumerate() {
+                assert_eq!(resource.resource_type, i as i32);
+                assert_eq!(resource.number, 0);
+            }
+        }
     }
 }
